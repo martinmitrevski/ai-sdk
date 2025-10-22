@@ -10,6 +10,7 @@ import Foundation
 import MCP
 import CoreFoundation
 import Combine
+import StreamChatAI
 
 struct ContentView: View {
     @StateObject private var viewModel = AskViewModel()
@@ -43,17 +44,10 @@ struct ContentView: View {
                 }
 
                 ScrollView {
-                    Text(viewModel.streamedAnswer.isEmpty ? "Your answer will appear here." : viewModel.streamedAnswer)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(12)
-                }
-
-                if viewModel.isStreaming {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    StreamingMessageView(
+                        content: viewModel.streamedAnswer,
+                        isGenerating: viewModel.isStreaming
+                    )
                 }
 
                 Spacer()

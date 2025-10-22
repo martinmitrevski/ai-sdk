@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		84B95D222EA840FA0045D198 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = 84B95D212EA840FA0045D198 /* MCP */; };
+		84B95D2A2EA8C7A10045D198 /* StreamChatAI in Frameworks */ = {isa = PBXBuildFile; productRef = 84B95D292EA8C7A10045D198 /* StreamChatAI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				84B95D2A2EA8C7A10045D198 /* StreamChatAI in Frameworks */,
 				84B95D222EA840FA0045D198 /* MCP in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -71,6 +73,7 @@
 			name = AIAgent;
 			packageProductDependencies = (
 				84B95D212EA840FA0045D198 /* MCP */,
+				84B95D292EA8C7A10045D198 /* StreamChatAI */,
 			);
 			productName = AIAgent;
 			productReference = 84B95D122EA8356D0045D198 /* AIAgent.app */;
@@ -102,6 +105,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				84B95D202EA840FA0045D198 /* XCRemoteSwiftPackageReference "swift-sdk" */,
+				84B95D282EA8C7A10045D198 /* XCRemoteSwiftPackageReference "stream-chat-swift-ai" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 84B95D132EA8356D0045D198 /* Products */;
@@ -351,6 +355,14 @@
 				minimumVersion = 0.10.2;
 			};
 		};
+		84B95D282EA8C7A10045D198 /* XCRemoteSwiftPackageReference "stream-chat-swift-ai" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/GetStream/stream-chat-swift-ai.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.3.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -358,6 +370,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 84B95D202EA840FA0045D198 /* XCRemoteSwiftPackageReference "swift-sdk" */;
 			productName = MCP;
+		};
+		84B95D292EA8C7A10045D198 /* StreamChatAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 84B95D282EA8C7A10045D198 /* XCRemoteSwiftPackageReference "stream-chat-swift-ai" */;
+			productName = StreamChatAI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
