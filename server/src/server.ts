@@ -229,6 +229,19 @@ app.post('/ask', express.json(), async (req, res) => {
     writeEvent({ error: message });
   };
 
+  let lastState: string | undefined;
+  const emitState = (state: string) => {
+    const trimmed = state.trim();
+    if (!trimmed || trimmed === lastState) {
+      return;
+    }
+    lastState = trimmed;
+    writeEvent({
+      type: 'state',
+      value: trimmed
+    });
+  };
+
   writeEvent({
     type: 'conversation',
     conversationId
@@ -247,6 +260,9 @@ app.post('/ask', express.json(), async (req, res) => {
     role: 'user',
     content: trimmedQuestion
   });
+
+  emitState('thinking');
+  let streamedAnswer = false;
 
   let mcpClient: Awaited<ReturnType<typeof experimental_createMCPClient>> | undefined;
 
@@ -315,14 +331,35 @@ app.post('/ask', express.json(), async (req, res) => {
     for await (const part of result.fullStream) {
       switch (part.type) {
         case 'text-delta': {
+          const wasEmpty = aggregatedText.length === 0;
           aggregatedText += part.text;
           writeEvent({ delta: part.text });
+          if (!streamedAnswer && (wasEmpty ? part.text.trim().length > 0 : true)) {
+            streamedAnswer = true;
+            emitState('responding');
+          }
           break;
         }
-        case 'tool-call':
-        case 'tool-result':
+        case 'tool-call': {
+          emitState(`checking ${part.toolName ?? 'external source'}`);
+          writeEvent(part);
+          break;
+        }
+        case 'tool-result': {
+          emitState('processing tool result');
+          writeEvent(part);
+          break;
+        }
         case 'tool-error': {
           writeEvent(part);
+          break;
+        }
+        case 'start-step': {
+          emitState('thinking');
+          break;
+        }
+        case 'finish-step': {
+          emitState('finalizing answer');
           break;
         }
         case 'error': {
@@ -332,6 +369,7 @@ app.post('/ask', express.json(), async (req, res) => {
               : typeof part.error === 'string'
                 ? part.error
                 : 'Unknown streaming error';
+          emitState('error');
           writeError(message);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -345,6 +383,9 @@ app.post('/ask', express.json(), async (req, res) => {
 
     const steps = await result.steps;
 
+    if (!streamedAnswer && aggregatedText.trim().length > 0) {
+      emitState('responding');
+    }
     writeEvent({
       answer: aggregatedText,
       steps
@@ -361,6 +402,7 @@ app.post('/ask', express.json(), async (req, res) => {
       role: 'assistant',
       content: aggregatedText
     });
+    emitState('idle');
 
     res.write('data: [DONE]\n\n');
     res.end();
@@ -368,6 +410,7 @@ app.post('/ask', express.json(), async (req, res) => {
     console.error('Error handling /ask request:', error);
     const message =
       error instanceof Error ? error.message : typeof error === 'string' ? error : 'Failed to generate a response';
+    emitState('error');
     writeError(message);
     res.write('data: [DONE]\n\n');
     res.end();

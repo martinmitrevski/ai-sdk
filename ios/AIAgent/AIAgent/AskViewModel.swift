@@ -16,6 +16,7 @@ final class AskViewModel: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     @Published var isStreaming: Bool = false
     @Published var errorMessage: String?
+    @Published var currentState: String?
     @Published var showGreetingAlert: Bool = false
     @Published var greetingMessage: String = "hi"
     @Published var conversationId: String?
@@ -76,6 +77,7 @@ final class AskViewModel: ObservableObject {
                         )
                     }
                     self.errorMessage = nil
+                    self.currentState = nil
                 }
             } catch {
                 await MainActor.run {
@@ -99,6 +101,7 @@ final class AskViewModel: ObservableObject {
         pendingAssistantMessageID = nil
         isStreaming = true
         question = ""
+        currentState = nil
 
         let currentConversationId = conversationId
 
@@ -240,6 +243,10 @@ final class AskViewModel: ObservableObject {
             await handleToolErrorEvent(event)
             return true
 
+        case "state":
+            await handleStateEvent(event)
+            return true
+
         default:
             return false
         }
@@ -255,7 +262,7 @@ final class AskViewModel: ObservableObject {
                let index = self.messages.firstIndex(where: { $0.id == id }) {
                 self.messages[index].content.append(delta)
             } else {
-                var message = ChatMessage(
+                let message = ChatMessage(
                     id: UUID(),
                     role: .assistant,
                     content: delta,
@@ -350,6 +357,17 @@ final class AskViewModel: ObservableObject {
                   let message = errorObject["message"] as? String {
             await MainActor.run {
                 self.errorMessage = message
+            }
+        }
+    }
+
+    private func handleStateEvent(_ event: [String: Any]) async {
+        guard let value = (event["value"] as? String) ?? (event["state"] as? String) else { return }
+        await MainActor.run {
+            if value.lowercased() == "idle" {
+                self.currentState = nil
+            } else {
+                self.currentState = value
             }
         }
     }
