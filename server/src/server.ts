@@ -86,6 +86,13 @@ const app = express();
 
 const transports = new Map<string, SSEServerTransport>();
 const port = parseInt(process.env.PORT || '3000', 10);
+type ConversationRole = 'user' | 'assistant';
+type ConversationMessage = {
+  role: ConversationRole;
+  content: string;
+};
+const conversations = new Map<string, ConversationMessage[]>();
+let nextConversationId = 1;
 
 app.get('/mcp', async (req, res) => {
   try {
@@ -194,6 +201,21 @@ app.post('/ask', express.json(), async (req, res) => {
     return;
   }
 
+  let conversationId: string | undefined =
+    typeof req.body?.conversationId === 'string' && req.body.conversationId.trim().length > 0
+      ? req.body.conversationId.trim()
+      : undefined;
+
+  if (!conversationId) {
+    conversationId = String(nextConversationId++);
+  }
+
+  let conversation = conversations.get(conversationId);
+  if (!conversation) {
+    conversation = [];
+    conversations.set(conversationId, conversation);
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -206,6 +228,25 @@ app.post('/ask', express.json(), async (req, res) => {
   const writeError = (message: string) => {
     writeEvent({ error: message });
   };
+
+  writeEvent({
+    type: 'conversation',
+    conversationId
+  });
+
+  const trimmedQuestion = question.trim();
+
+  const userMessage: ConversationMessage = {
+    role: 'user',
+    content: trimmedQuestion
+  };
+  conversation.push(userMessage);
+
+  writeEvent({
+    type: 'message',
+    role: 'user',
+    content: trimmedQuestion
+  });
 
   let mcpClient: Awaited<ReturnType<typeof experimental_createMCPClient>> | undefined;
 
@@ -258,15 +299,15 @@ app.post('/ask', express.json(), async (req, res) => {
       client_greet: clientGreetTool
     };
 
+    const aiMessages = conversation.map((msg) => ({
+      role: msg.role,
+      content: msg.content
+    }));
+
     const result = await streamText({
       model: openai('gpt-4o-mini'),
       tools: combinedTools,
-      messages: [
-        {
-          role: 'user',
-          content: question
-        }
-      ]
+      messages: aiMessages
     });
 
     let aggregatedText = '';
@@ -308,6 +349,19 @@ app.post('/ask', express.json(), async (req, res) => {
       answer: aggregatedText,
       steps
     });
+
+    const assistantMessage: ConversationMessage = {
+      role: 'assistant',
+      content: aggregatedText
+    };
+    conversation.push(assistantMessage);
+
+    writeEvent({
+      type: 'message',
+      role: 'assistant',
+      content: aggregatedText
+    });
+
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (error) {
@@ -320,6 +374,23 @@ app.post('/ask', express.json(), async (req, res) => {
   } finally {
     await mcpClient?.close();
   }
+});
+
+app.get('/conversations/:conversationId', (req, res) => {
+  const { conversationId } = req.params;
+  const conversation = conversations.get(conversationId);
+
+  if (!conversation) {
+    res.status(404).json({
+      error: `Conversation ${conversationId} not found`
+    });
+    return;
+  }
+
+  res.json({
+    conversationId,
+    messages: conversation
+  });
 });
 
 app
