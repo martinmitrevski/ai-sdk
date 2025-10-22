@@ -1,0 +1,30 @@
+{
+  "name": "ai-sdk",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "agent": "tsx src/agent.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@ai-sdk/openai": "^2.0.53",
+    "@modelcontextprotocol/sdk": "^1.20.1",
+    "ai": "^5.0.76",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "undici": "^7.16.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
