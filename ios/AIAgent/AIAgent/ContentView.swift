@@ -177,7 +177,7 @@ struct MessageBubble: View {
                 letterInterval: 0.001
             )
             .padding()
-            .background(isUser ? Color.accentColor : Color(.secondarySystemBackground))
+            .background(isUser ? Color.gray.opacity(0.1) : Color(.secondarySystemBackground))
             .foregroundColor(isUser ? Color.white : Color.primary)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
