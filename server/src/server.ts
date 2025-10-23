@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { experimental_createMCPClient, streamText, tool, jsonSchema } from 'ai';
 import { openai } from '@ai-sdk/openai';
+import { anthropic } from '@ai-sdk/anthropic';
 import 'dotenv/config';
 
 // --- 1) Create MCP server
@@ -96,6 +97,33 @@ type ConversationRecord = {
   updatedAt: number;
 };
 const conversations = new Map<string, ConversationRecord>();
+
+const MODEL_PRESETS: Record<string, { provider: string; id: string }> = {
+  openaidefault: { provider: 'openai', id: 'gpt-4o-mini' },
+  anthropicsonnet: { provider: 'anthropic', id: 'claude-3-5-sonnet-20240620' }
+};
+
+function resolveModel(info: any) {
+  const provider = typeof info?.provider === 'string' ? info.provider : undefined;
+  const modelId = typeof info?.id === 'string' ? info.id : undefined;
+
+  if (provider === 'openai' && modelId) {
+    return openai(modelId);
+  }
+  if (provider === 'anthropic' && modelId) {
+    return anthropic(modelId);
+  }
+
+  const fallback = Object.values(MODEL_PRESETS).find(
+    (preset) => preset.provider === provider && preset.id === modelId
+  ) ?? MODEL_PRESETS.openaidefault;
+
+  if (fallback.provider === 'anthropic') {
+    return anthropic(fallback.id);
+  }
+
+  return openai(fallback.id);
+}
 let nextConversationId = 1;
 
 app.get('/mcp', async (req, res) => {
@@ -325,8 +353,11 @@ app.post('/ask', express.json(), async (req, res) => {
       content: msg.content
     }));
 
+    const modelInfo = req.body?.model;
+    const selectedModel = resolveModel(modelInfo);
+
     const result = await streamText({
-      model: openai('gpt-4o-mini'),
+      model: selectedModel,
       tools: combinedTools,
       messages: aiMessages
     });

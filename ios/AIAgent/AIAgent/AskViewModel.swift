@@ -20,6 +20,30 @@ struct ConversationSummary: Identifiable, Decodable, Equatable {
     var id: String { conversationId }
 }
 
+enum ModelOption: String, CaseIterable, Identifiable {
+    case openAIMini = "openai:gpt-4o-mini"
+    case anthropicSonnet = "anthropic:claude-3-5-sonnet-20240620"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .openAIMini:
+            return "GPT-4o mini"
+        case .anthropicSonnet:
+            return "Claude 3.5 Sonnet"
+        }
+    }
+
+    var provider: String {
+        rawValue.split(separator: ":").first.map(String.init) ?? "openai"
+    }
+
+    var modelId: String {
+        rawValue.split(separator: ":").dropFirst().joined(separator: ":")
+    }
+}
+
 final class AskViewModel: ObservableObject {
     @Published var question: String = ""
     @Published private(set) var messages: [ChatMessage] = []
@@ -30,6 +54,7 @@ final class AskViewModel: ObservableObject {
     @Published var showGreetingAlert: Bool = false
     @Published var greetingMessage: String = "hi"
     @Published var conversationId: String?
+    @Published var selectedModel: ModelOption = .openAIMini
 
     private var streamTask: Task<Void, Never>?
     private let baseURL: URL
@@ -175,7 +200,13 @@ final class AskViewModel: ObservableObject {
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 120
 
-        var body: [String: Any] = ["question": question]
+        var body: [String: Any] = [
+            "question": question,
+            "model": [
+                "provider": selectedModel.provider,
+                "id": selectedModel.modelId
+            ]
+        ]
         if let conversationId = conversationId {
             body["conversationId"] = conversationId
         }

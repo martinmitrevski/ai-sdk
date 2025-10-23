@@ -127,6 +127,15 @@ struct ContentView: View {
                         Image(systemName: "line.3.horizontal")
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Picker(viewModel.selectedModel.displayName, selection: $viewModel.selectedModel) {
+                        ForEach(ModelOption.allCases) { option in
+                            Text(option.displayName).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
             }
             .alert("Greeting", isPresented: $viewModel.showGreetingAlert) {
                 Button("OK", role: .cancel) {
