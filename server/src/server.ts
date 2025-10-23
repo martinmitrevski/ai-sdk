@@ -91,7 +91,11 @@ type ConversationMessage = {
   role: ConversationRole;
   content: string;
 };
-const conversations = new Map<string, ConversationMessage[]>();
+type ConversationRecord = {
+  messages: ConversationMessage[];
+  updatedAt: number;
+};
+const conversations = new Map<string, ConversationRecord>();
 let nextConversationId = 1;
 
 app.get('/mcp', async (req, res) => {
@@ -210,10 +214,10 @@ app.post('/ask', express.json(), async (req, res) => {
     conversationId = String(nextConversationId++);
   }
 
-  let conversation = conversations.get(conversationId);
-  if (!conversation) {
-    conversation = [];
-    conversations.set(conversationId, conversation);
+  let conversationRecord = conversations.get(conversationId);
+  if (!conversationRecord) {
+    conversationRecord = { messages: [], updatedAt: Date.now() };
+    conversations.set(conversationId, conversationRecord);
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -253,7 +257,8 @@ app.post('/ask', express.json(), async (req, res) => {
     role: 'user',
     content: trimmedQuestion
   };
-  conversation.push(userMessage);
+  conversationRecord.messages.push(userMessage);
+  conversationRecord.updatedAt = Date.now();
 
   writeEvent({
     type: 'message',
@@ -315,7 +320,7 @@ app.post('/ask', express.json(), async (req, res) => {
       client_greet: clientGreetTool
     };
 
-    const aiMessages = conversation.map((msg) => ({
+    const aiMessages = conversationRecord.messages.map((msg) => ({
       role: msg.role,
       content: msg.content
     }));
@@ -395,7 +400,8 @@ app.post('/ask', express.json(), async (req, res) => {
       role: 'assistant',
       content: aggregatedText
     };
-    conversation.push(assistantMessage);
+    conversationRecord.messages.push(assistantMessage);
+    conversationRecord.updatedAt = Date.now();
 
     writeEvent({
       type: 'message',
@@ -419,11 +425,32 @@ app.post('/ask', express.json(), async (req, res) => {
   }
 });
 
+app.get('/conversations', (_req, res) => {
+  const summaries = Array.from(conversations.entries())
+    .map(([conversationId, record]) => ({
+      conversationId,
+      messageCount: record.messages.length,
+      lastMessage: record.messages.at(-1)?.content ?? null,
+      updatedAt: record.updatedAt
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+
+  res.json({ conversations: summaries });
+});
+
+app.post('/conversations', (_req, res) => {
+  const conversationId = String(nextConversationId++);
+  const record: ConversationRecord = { messages: [], updatedAt: Date.now() };
+  conversations.set(conversationId, record);
+
+  res.status(201).json({ conversationId });
+});
+
 app.get('/conversations/:conversationId', (req, res) => {
   const { conversationId } = req.params;
-  const conversation = conversations.get(conversationId);
+  const record = conversations.get(conversationId);
 
-  if (!conversation) {
+  if (!record) {
     res.status(404).json({
       error: `Conversation ${conversationId} not found`
     });
@@ -432,7 +459,7 @@ app.get('/conversations/:conversationId', (req, res) => {
 
   res.json({
     conversationId,
-    messages: conversation
+    messages: record.messages
   });
 });
 

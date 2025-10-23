@@ -11,12 +11,22 @@ import MCP
 import CoreFoundation
 import Combine
 
+struct ConversationSummary: Identifiable, Decodable, Equatable {
+    let conversationId: String
+    let lastMessage: String?
+    let messageCount: Int
+    let updatedAt: TimeInterval
+
+    var id: String { conversationId }
+}
+
 final class AskViewModel: ObservableObject {
     @Published var question: String = ""
     @Published private(set) var messages: [ChatMessage] = []
     @Published var isStreaming: Bool = false
     @Published var errorMessage: String?
     @Published var currentState: String?
+    @Published private(set) var conversations: [ConversationSummary] = []
     @Published var showGreetingAlert: Bool = false
     @Published var greetingMessage: String = "hi"
     @Published var conversationId: String?
@@ -33,6 +43,10 @@ final class AskViewModel: ObservableObject {
         self.clientToolServer = LocalMCPToolServer { [weak self] event in
             await self?.handleLocalMCPEvent(event)
         }
+
+        Task {
+            await fetchConversations(quiet: true)
+        }
     }
 
     deinit {
@@ -42,49 +56,75 @@ final class AskViewModel: ObservableObject {
     func loadConversation(id: String) {
         streamTask?.cancel()
         streamTask = nil
+        currentState = nil
+        question = ""
+        conversationId = id
+
+        Task {
+            await refreshConversationDetail(for: id, quietly: false)
+        }
+    }
+
+    func refreshConversations() {
+        Task {
+            await fetchConversations(quiet: true)
+        }
+    }
+
+    func startNewConversation() {
+        streamTask?.cancel()
+        streamTask = nil
 
         Task {
             do {
-                guard let url = URL(string: "/conversations/\(id)", relativeTo: baseURL) else {
+                guard let url = URL(string: "/conversations", relativeTo: baseURL) else {
                     throw AskError.invalidURL
                 }
 
                 var request = URLRequest(url: url)
-                request.httpMethod = "GET"
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
                 let (data, response) = try await URLSession.shared.data(for: request)
-                guard let httpResponse = response as? HTTPURLResponse else {
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else {
                     throw AskError.invalidResponse
                 }
 
-                guard (200..<300).contains(httpResponse.statusCode) else {
-                    throw AskError.server(
-                        status: httpResponse.statusCode,
-                        message: String(decoding: data, as: UTF8.self)
-                    )
-                }
-
-                let payload = try decoder.decode(ConversationResponse.self, from: data)
+                let payload = try decoder.decode(NewConversationResponse.self, from: data)
 
                 await MainActor.run {
                     self.conversationId = payload.conversationId
-                    self.messages = payload.messages.map {
-                        ChatMessage(
-                            id: UUID(),
-                            role: $0.role,
-                            content: $0.content,
-                            isStreaming: false
-                        )
-                    }
-                    self.errorMessage = nil
+                    self.messages = []
+                    self.streamingAssistantBuffer = ""
+                    self.pendingAssistantMessageID = nil
                     self.currentState = nil
+                    self.errorMessage = nil
+                    self.isStreaming = false
+                    self.question = ""
                 }
+
+                await fetchConversations(quiet: false)
+                await refreshConversationDetail(for: payload.conversationId, quietly: true)
             } catch {
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                 }
             }
         }
+    }
+
+    func selectConversation(_ summary: ConversationSummary) {
+        guard summary.conversationId != conversationId else { return }
+        streamTask?.cancel()
+        streamTask = nil
+        pendingAssistantMessageID = nil
+        streamingAssistantBuffer = ""
+        isStreaming = false
+        currentState = nil
+        errorMessage = nil
+        question = ""
+        loadConversation(id: summary.conversationId)
     }
 
     func sendQuestion() {
@@ -169,6 +209,10 @@ final class AskViewModel: ObservableObject {
         }
 
         await finalizeAssistantMessage(with: streamingAssistantBuffer.isEmpty ? nil : streamingAssistantBuffer)
+        await fetchConversations(quiet: true)
+        if let id = conversationId {
+            await refreshConversationDetail(for: id, quietly: true)
+        }
     }
 
     private func handleStreamEvent(_ event: [String: Any]) async -> Bool {
@@ -209,6 +253,11 @@ final class AskViewModel: ObservableObject {
             if let conversationId = event["conversationId"] as? String {
                 await MainActor.run {
                     self.conversationId = conversationId
+                    self.currentState = nil
+                }
+                Task {
+                    await self.fetchConversations(quiet: true)
+                    await self.refreshConversationDetail(for: conversationId, quietly: true)
                 }
             }
             return true
@@ -372,6 +421,79 @@ final class AskViewModel: ObservableObject {
         }
     }
 
+    private func refreshConversationDetail(for id: String, quietly: Bool) async {
+        do {
+            guard let url = URL(string: "/conversations/\(id)", relativeTo: baseURL) else {
+                throw AskError.invalidURL
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw AskError.invalidResponse
+            }
+
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                throw AskError.server(
+                    status: httpResponse.statusCode,
+                    message: String(decoding: data, as: UTF8.self)
+                )
+            }
+
+            let payload = try decoder.decode(ConversationResponse.self, from: data)
+
+            await MainActor.run {
+                self.conversationId = payload.conversationId
+                self.messages = payload.messages.map {
+                    ChatMessage(
+                        id: UUID(),
+                        role: $0.role,
+                        content: $0.content,
+                        isStreaming: false
+                    )
+                }
+                self.errorMessage = quietly ? self.errorMessage : nil
+            }
+        } catch {
+            if !quietly {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func fetchConversations(quiet: Bool) async {
+        do {
+            guard let url = URL(string: "/conversations", relativeTo: baseURL) else {
+                throw AskError.invalidURL
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                throw AskError.invalidResponse
+            }
+
+            let payload = try decoder.decode(ConversationsListResponse.self, from: data)
+
+            await MainActor.run {
+                self.conversations = payload.conversations
+            }
+        } catch {
+            if !quiet {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
     private func handleLocalMCPEvent(_ event: LocalMCPToolServer.Event) async {
         await MainActor.run {
             switch event {
@@ -446,6 +568,14 @@ final class AskViewModel: ObservableObject {
 
     func dismissGreetingAlert() {
         showGreetingAlert = false
+    }
+
+    private struct ConversationsListResponse: Decodable {
+        let conversations: [ConversationSummary]
+    }
+
+    private struct NewConversationResponse: Decodable {
+        let conversationId: String
     }
 
     private struct ConversationResponse: Decodable {
